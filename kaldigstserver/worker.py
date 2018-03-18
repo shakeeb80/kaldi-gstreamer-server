@@ -17,7 +17,7 @@ import codecs
 import zlib
 import base64
 import time
-
+from threading import Thread
 import tornado.gen 
 import tornado.process
 import tornado.ioloop
@@ -366,6 +366,32 @@ def main_loop(uri, decoder_pipeline, post_processor, full_post_processor=None):
         # fixes a race condition
         time.sleep(1)
 
+def worker_thread(uri, conf):
+
+    # fork off the post-processors before we load the model into memory
+    post_processor = None
+    if "post-processor" in conf:
+        STREAM = tornado.process.Subprocess.STREAM
+        post_processor = tornado.process.Subprocess(conf["post-processor"], shell=True, stdin=PIPE, stdout=STREAM)
+
+    full_post_processor = None
+    if "full-post-processor" in conf:
+        full_post_processor = Popen(conf["full-post-processor"], shell=True, stdin=PIPE, stdout=PIPE)
+
+    #global USE_NNET2
+    #USE_NNET2 = conf.get("use-nnet2", False)
+
+    #global SILENCE_TIMEOUT
+    #SILENCE_TIMEOUT = conf.get("silence-timeout", 5)
+    if USE_NNET2:
+        decoder_pipeline = DecoderPipeline2(conf)
+    else:
+        decoder_pipeline = DecoderPipeline(conf)
+
+    #loop = GObject.MainLoop()
+    #thread.start_new_thread(loop.run, ())
+    #thread.start_new_thread(tornado.ioloop.IOLoop.instance().start, ())
+    main_loop(uri, decoder_pipeline, post_processor, full_post_processor)  
 
 
 def main():
@@ -378,9 +404,9 @@ def main():
 
     args = parser.parse_args()
 
-    if args.fork > 1:
-        logging.info("Forking into %d processes" % args.fork)
-        tornado.process.fork_processes(args.fork)
+    #if args.fork > 1:
+    #    logging.info("Forking into %d processes" % args.fork)
+    #    tornado.process.fork_processes(args.fork)
 
     conf = {}
     if args.conf:
@@ -391,29 +417,41 @@ def main():
         logging.config.dictConfig(conf["logging"])
 
     # fork off the post-processors before we load the model into memory
-    post_processor = None
-    if "post-processor" in conf:
-        STREAM = tornado.process.Subprocess.STREAM
-        post_processor = tornado.process.Subprocess(conf["post-processor"], shell=True, stdin=PIPE, stdout=STREAM)
+    #post_processor = None
+    #if "post-processor" in conf:
+    #    STREAM = tornado.process.Subprocess.STREAM
+    #    post_processor = tornado.process.Subprocess(conf["post-processor"], shell=True, stdin=PIPE, stdout=STREAM)
 
-    full_post_processor = None
-    if "full-post-processor" in conf:
-        full_post_processor = Popen(conf["full-post-processor"], shell=True, stdin=PIPE, stdout=PIPE)
+    #full_post_processor = None
+    #if "full-post-processor" in conf:
+    #    full_post_processor = Popen(conf["full-post-processor"], shell=True, stdin=PIPE, stdout=PIPE)
 
     global USE_NNET2
     USE_NNET2 = conf.get("use-nnet2", False)
 
     global SILENCE_TIMEOUT
     SILENCE_TIMEOUT = conf.get("silence-timeout", 5)
-    if USE_NNET2:
-        decoder_pipeline = DecoderPipeline2(conf)
-    else:
-        decoder_pipeline = DecoderPipeline(conf)
+    #if USE_NNET2:
+    #    decoder_pipeline = DecoderPipeline2(conf)
+    #else:
+    #    decoder_pipeline = DecoderPipeline(conf)
 
     loop = GObject.MainLoop()
     thread.start_new_thread(loop.run, ())
     thread.start_new_thread(tornado.ioloop.IOLoop.instance().start, ())
-    main_loop(args.uri, decoder_pipeline, post_processor, full_post_processor)  
+
+    threads = []
+    for x in range(0, 5):
+        t = Thread(target=worker_thread, name="worker", args=(args.uri, conf))
+	t.start()
+        threads.append(t)
+        #threads.append(thread.start_new_thread(worker_thread, (args.uri, conf)))
+
+    #main_loop(args.uri, decoder_pipeline, post_processor, full_post_processor)  
+    #worker_thread(args.uri, conf)
+    for t in threads:
+        t.join()
+        ret = t.result
 
 if __name__ == "__main__":
     main()
