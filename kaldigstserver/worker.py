@@ -378,19 +378,11 @@ def worker_thread(uri, conf):
     if "full-post-processor" in conf:
         full_post_processor = Popen(conf["full-post-processor"], shell=True, stdin=PIPE, stdout=PIPE)
 
-    #global USE_NNET2
-    #USE_NNET2 = conf.get("use-nnet2", False)
-
-    #global SILENCE_TIMEOUT
-    #SILENCE_TIMEOUT = conf.get("silence-timeout", 5)
     if USE_NNET2:
         decoder_pipeline = DecoderPipeline2(conf)
     else:
         decoder_pipeline = DecoderPipeline(conf)
 
-    #loop = GObject.MainLoop()
-    #thread.start_new_thread(loop.run, ())
-    #thread.start_new_thread(tornado.ioloop.IOLoop.instance().start, ())
     main_loop(uri, decoder_pipeline, post_processor, full_post_processor)  
 
 
@@ -404,9 +396,6 @@ def main():
 
     args = parser.parse_args()
 
-    #if args.fork > 1:
-    #    logging.info("Forking into %d processes" % args.fork)
-    #    tornado.process.fork_processes(args.fork)
 
     conf = {}
     if args.conf:
@@ -416,39 +405,23 @@ def main():
     if "logging" in conf:
         logging.config.dictConfig(conf["logging"])
 
-    # fork off the post-processors before we load the model into memory
-    #post_processor = None
-    #if "post-processor" in conf:
-    #    STREAM = tornado.process.Subprocess.STREAM
-    #    post_processor = tornado.process.Subprocess(conf["post-processor"], shell=True, stdin=PIPE, stdout=STREAM)
-
-    #full_post_processor = None
-    #if "full-post-processor" in conf:
-    #    full_post_processor = Popen(conf["full-post-processor"], shell=True, stdin=PIPE, stdout=PIPE)
 
     global USE_NNET2
     USE_NNET2 = conf.get("use-nnet2", False)
 
     global SILENCE_TIMEOUT
     SILENCE_TIMEOUT = conf.get("silence-timeout", 5)
-    #if USE_NNET2:
-    #    decoder_pipeline = DecoderPipeline2(conf)
-    #else:
-    #    decoder_pipeline = DecoderPipeline(conf)
 
     loop = GObject.MainLoop()
     thread.start_new_thread(loop.run, ())
     thread.start_new_thread(tornado.ioloop.IOLoop.instance().start, ())
 
     threads = []
-    for x in range(0, 5):
+    for x in range(0, args.fork):
         t = Thread(target=worker_thread, name="worker", args=(args.uri, conf))
 	t.start()
         threads.append(t)
-        #threads.append(thread.start_new_thread(worker_thread, (args.uri, conf)))
 
-    #main_loop(args.uri, decoder_pipeline, post_processor, full_post_processor)  
-    #worker_thread(args.uri, conf)
     for t in threads:
         t.join()
         ret = t.result
